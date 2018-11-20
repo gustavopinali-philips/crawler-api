@@ -5,13 +5,26 @@ var https = require("https");
 
 const app = express()
 
+/**
+ * Função responsavel por encontar um {sid} válido e os {cookies} necessários para iniciar uma busca no site
+ * 
+ * @param {object} data - Recebe os valores presentes em req.body
+ * 
+ * @returns {object} = { success: true, data: {object} }
+ * @returns {object} = { success: false, data: {object} }
+ * @returns {object} = { success: false, error: {string} }
+ */
 async function post(data, callback) {
 	try {
-		// Verificação dos parametros obrigatorios
+		/** 
+		 * Verificação dos parametros com envio obrigatório
+		 * @param {string} checkin
+		 * @param {string} checkout
+		 */
 		if(!data.hasOwnProperty('checkin')) throw new Error("Sem permissão para realizar este comando.")
 		if(!data.hasOwnProperty('checkout')) throw new Error("Sem permissão para realizar este comando.")
 
-		// dados para busca via SearchResultsByChain
+		/** @var request_data_byChain - Dados necessarios para realizar buscas por hoteis com quartos disponiveis */
 		var request_data_byChain = {
 			ucUrl: 				'SearchResultsByChain',
 			hotel: 				data.hotel || '',
@@ -29,7 +42,7 @@ async function post(data, callback) {
 			rnd:				data.rnd || '1542435931910'			
 		}
 
-		// dados para busca via SearchResultsByRoom
+		/** @var request_data_byRoom - Dados necessarios para realizar buscas com quartos disponiveis em hoteis */
 		var request_data_byRoom = {
 			ucUrl: 				'SearchResultsByRoom',
 			diff:				false,
@@ -47,22 +60,27 @@ async function post(data, callback) {
 			rnd:				data.rnd || '1542435931910'			
 		}
 
-		// verificação de tipo de busca
 		var cookie = '';
 		switch(data.ucUrl){
 			
 			case 'SearchResultsByRoom':
-			//if(!data.hasOwnProperty('sid')){
-				// Busca por um sid valido para realizar a requisição
-				await get_validSid(data.ucUrl).then(d =>{
-					request_data_byRoom.sid = d.sid
-					cookie = d.cookie[0].substr(0, d.cookie[0].indexOf(';'))+'; '+d.cookie[1].substr(0,  d.cookie[1].indexOf(';'))+'; '
-					console.log(cookie)
-				},err =>{
-					throw new Error("Não foi possivel encontrar um SID valido.")	
-				});
-			//}
-			// realiza a busca dos quartos disponiveis			
+			/** 
+			 * Caso o @var data.ucUrl seja de valor 'SearchResultsByRoom' é realizado uma busca por um @var sid e @var cookie validos, necessarios
+			 * para realizar buscas pela API, apos aguardar o retorno destes dados é realizado uma busca utilizando os parametros definidos em 
+			 * @var request_data_byRoom, o resultado é processado e os quartos encontrados são retornados em @var data.
+			 * 
+			 * obs: Os dados encontrados em @function get_validSid são necessarios, mas apos encontrados, tem validade de 24h. O armazenamento destes
+			 * dados pode reduzir bastante o tempo de processamento, em testes realizados encontrei uma diferença de mais de 2000ms,
+			 * 4800ms pra requisiçoes sem enviar um @var sid e 2200ms enviando um @var sid valído 
+			 */
+			await get_validSid(data.ucUrl).then(d =>{
+				request_data_byRoom.sid = d.sid
+				cookie = d.cookie[0].substr(0, d.cookie[0].indexOf(';'))+'; '+d.cookie[1].substr(0,  d.cookie[1].indexOf(';'))+'; '
+				console.log(cookie)
+			},err =>{
+				throw new Error("Não foi possivel encontrar um SID valido.")	
+			});
+			/** @function SearchResultsByRoom - Responsavel por encontrar quartos disponiveis com base dos dados enviados em @var request_data_byRoom  */
 			SearchResultsByRoom(request_data_byRoom,cookie).then(response =>{
 				return callback(null, { success : true, data : response });
 			}, err =>{
@@ -71,18 +89,24 @@ async function post(data, callback) {
 			break;
 
 			default:
-			//if(!data.hasOwnProperty('sid')){
-				// Busca por um sid valido para realizar a requisição
-				await get_validSid(data.ucUrl).then(d =>{
-					console.log(d)
-					request_data_byChain.sid = d.sid
-					cookie = d.cookie[0].substr(0, d.cookie[0].indexOf(';'))+'; '+d.cookie[1].substr(0,  d.cookie[1].indexOf(';'))+';'
-					console.log(cookie)
-				},err =>{
-					throw new Error("Não foi possivel encontrar um SID valido.")	
-				});
-			//}
-			// realiza a busca dos hoteis com quartos disponiveis	
+			/** 
+			 * Caso o @var data.ucUrl seja de valor 'SearchResultsByChain' é realizado uma busca por um @var sid e @var cookie validos, necessarios
+			 * para realizar buscas pela API, apos aguardar o retorno destes dados é realizado uma busca utilizando os parametros definidos em 
+			 * @var request_data_byRoom, o resultado é processado e os quartos encontrados são retornados em @var data.
+			 * 
+			 * obs: Os dados encontrados em @function get_validSid são necessarios, mas apos encontrados, tem validade de 24h. O armazenamento destes
+			 * dados pode reduzir bastante o tempo de processamento, em testes realizados encontrei uma diferença de mais de 2000ms,
+			 * 4800ms pra requisiçoes sem enviar um @var sid e 2200ms enviando um @var sid valído 
+			 */
+			await get_validSid(data.ucUrl).then(d =>{
+				console.log(d)
+				request_data_byChain.sid = d.sid
+				cookie = d.cookie[0].substr(0, d.cookie[0].indexOf(';'))+'; '+d.cookie[1].substr(0,  d.cookie[1].indexOf(';'))+';'
+				console.log(cookie)
+			},err =>{
+				throw new Error("Não foi possivel encontrar um SID valido.")	
+			});
+			/** @function SearchResultsByChain - Responsavel por encontrar hoteis com quartos disponiveis com base dos dados enviados em @var request_data_byChain  */
 			SearchResultsByChain(request_data_byChain,cookie).then(response =>{
 				return callback(null, { success : true, data : response });
 			}, err =>{
@@ -91,26 +115,46 @@ async function post(data, callback) {
 			break;
 		}
 	} catch (e) {
+		/** 
+		 * Caso for encontrado algum erro enquanto a API realizar o processamento dos dados, sua descrição e retornada
+		 * obs: não indicado em ambiente de Produção
+		 */
 		return callback(null, { success: false, error: e.message });
 	}
 }
 
-// função responsavel por encontrar os dados necessarios para realizar uma busca
+/**
+ * Função responsavel por encontar um {sid} válido e os {cookies} necessários para iniciar uma busca no site
+ * 
+ * @param {string} type - Tipo de busca que a API pretente realizar
+ * 
+ * @returns {object} = { success: true, sid: {string}, cookie: {string} }
+ * @returns {object} = { success: false, error: {string} }
+ */
 async function get_validSid ( type='SearchResultsByChain'){
 	type = 'SearchResultsByRoom'
 	return new Promise((resolve,reject) => {
+
+		/** @var url {string} - Endereço na Web onde poderão ser encontrados os dados necessários, seu valor depende do @param type */
 		var url = 'https://myreservations.omnibees.com/chain.aspx?c=2983&lang=pt-BR&version=MyReservation'
 		if(type == 'SearchResultsByRoom') url = 'https://myreservations.omnibees.com/default.aspx?q=5462'
 
 		switch(type){
 			case 'SearchResultsByChain':
+			/** 
+			 * Caso o @param type seja de valor 'SearchResultsByChain' é realizado uma requisição HTTPS GET para a @var url definida, apos
+			 * realizada a requisição, o conteudo da pagina é processado com o intuito de encontrar um elemento HTML de id='bookingEngineForm',
+			 * este elemento é responsavel por armazenar o @var sid, obrigatório para realizar buscas pela API, apos encontrado, retornamos
+			 * seu valor junto ao @var cookie, que recebe o headers['set-cookie'] da requisição, tambem obrigatorio para realizar buscas pela API 
+			 */
 			var request = https.request(url, function(result) {
 				console.log(result.headers["set-cookie"])
-				var body = '';
+				/** @var body {string} - Variavel responsavel por receber todo o conteudo da requisição GET */
+				var body = '';		
 				result.on("data", function(chunk) { body += chunk; });
 				result.on("end", function(chunk) {
 					var start_parcer = new htmlparser.Parser({
-						onopentag: function(name, attribs){
+						onopentag: function(name, attribs){ // Verificação de cada tag presente no HTML da página
 							if(attribs.id == "bookingEngineForm"){							
 								const q = querystring.parse(attribs.action.substring(attribs.action.lastIndexOf('?')+1))
 								console.log(q)
@@ -120,20 +164,29 @@ async function get_validSid ( type='SearchResultsByChain'){
 					})
 					start_parcer.write(body);
 					start_parcer.end();
+					/** Caso apos o processamento da pagina não for encontrado um @var sid válido, é retornado uma mensagem de erro */
 					reject({ success: false, error: "Não foi possivel encontrar os dados para realizar a busca" })
 				});
 			}).on('error', function(e) {
+				/** Caso não seja possivel realizar o processamento da página, é retornado uma mensagem com o erro encontrado */
 				return reject({ success: false, error: e.message });
 			});
 			request.end();
 			break;
 
 			case 'SearchResultsByRoom':
+			/** 
+			 * Caso o @param type seja de valor 'SearchResultsByRoom' é realizado uma requisição HTTPS GET para a @var url definida, apos
+			 * realizada a requisição, o conteudo da pagina é processado com o intuito de encontrar um elemento HTML de id='hfSID',
+			 * este elemento é responsavel por armazenar o @var sid, obrigatório para realizar buscas pela API, apos encontrado, retornamos
+			 * seu valor junto ao @var cookie, que recebe o headers['set-cookie'] da requisição, tambem obrigatorio para realizar buscas pela API 
+			 */
 			var request = https.request(url, function(result) {
+				/** @var body {string} - Variavel responsavel por receber todo o conteudo da requisição GET */
 				var body = '';
 				result.on("data", function(chunk) { body += chunk; });
 				result.on("end", function(chunk) {
-					var start_parcer = new htmlparser.Parser({
+					var start_parcer = new htmlparser.Parser({ // Verificação de cada tag presente no HTML da página
 						onopentag: function(name, attribs){
 							if(attribs.id == "hfSID"){				
 								if(attribs.value)resolve({ success: true, sid: attribs.value,cookie: result.headers["set-cookie"] });
@@ -142,21 +195,32 @@ async function get_validSid ( type='SearchResultsByChain'){
 					})
 					start_parcer.write(body);
 					start_parcer.end();
+					/** Caso apos o processamento da pagina não for encontrado um @var sid válido, é retornado uma mensagem de erro */
 					reject({ success: false, error: "Não foi possivel encontrar os dados para realizar a busca" })
 				});
 			}).on('error', function(e) {
+				/** Caso não seja possivel realizar o processamento da página, é retornado uma mensagem com o erro encontrado */
 				return reject({ success: false, error: e.message });
 			});
 			request.end();
 			break;
 
-
 			default :
+			/** Caso o @type for inválido, é retornado uma mensagem de erro  */
 			reject({ success: false, error: "Não foi possivel encontrar os dados para realizar a busca" });
 			break;
 		}		
 	});
 }
+
+/**
+ * Função responsavel buscar quartos disponives com base nos parametros enviados
+ * 
+ * @param {request_data} request_data - @var request_data_byRoom
+ * 
+ * @returns {object} = { success: true, rooms: {array} }
+ * @returns {object} = { success: false, error: {string} }
+ */
 
 async function SearchResultsByRoom(request_data,cookie){
 	return new Promise( (resolve,reject) => {
@@ -425,6 +489,14 @@ async function SearchResultsByRoom(request_data,cookie){
 	})
 }
 
+/**
+ * Função responsavel buscar hoteis com quartos disponives com base nos parametros enviados
+ * 
+ * @param {request_data} request_data - @var request_data_byChain
+ * 
+ * @returns {object} = { success: true, entries: {array} }
+ * @returns {object} = { success: false, error: {string} }
+ */
 async function SearchResultsByChain(request_data,cookie){
 	return new Promise( (resolve,reject) => {
 		// dados para requisição de hoteis com quartos disponiveis
